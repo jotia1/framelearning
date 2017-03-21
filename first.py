@@ -40,6 +40,8 @@ for ind in inds:
 
 print("Data processed, about to build graph")
 
+num_dssizes = 8
+ds_sizes = [2**x for x in range(num_dssizes)]
 learning_rate = 0.01
 batch_size = 128
 test_size = 256
@@ -54,6 +56,23 @@ trY = np.reshape(future_accums, [-1, img_width * img_height])
 teX = trX
 teY = trY
 
+def pool_layer(inp, size):
+    """ Return tensorflow OPs that will average patches of size size in the inp
+        tensor. Results are scaled between 0,1.
+    """
+    pool_size = [1, size, size, 1]
+    fourD = tf.reshape(inp, [-1, img_width, img_height, 1])
+    avg = tf.nn.avg_pool(fourD, ksize=pool_size, strides=pool_size, padding='VALID')
+    # Rescale as: normalize_value = (value − min_value) / (max_value − min_value)
+    return tf.divide(
+            tf.subtract(
+                avg, 
+                tf.reduce_min(avg)),
+            tf.subtract(
+                tf.reduce_max(avg),
+                tf.reduce_min(avg))
+        )
+
 with tf.Graph().as_default() as g:
     X = tf.placeholder(tf.float32, shape=[None, num_inp], name='X')
     Y = tf.placeholder(tf.float32, shape=[None, num_outp], name='Y')
@@ -63,7 +82,20 @@ with tf.Graph().as_default() as g:
 
     y = tf.nn.relu(tf.add(tf.matmul(X, W), b), name='outp')
 
-    cost = tf.sqrt(tf.reduce_sum(tf.pow(tf.subtract(y, Y), 2, name='powerrr')))
+    ## Calculate the cost of resolutions 0 (128 wide), 3 (16 wide), 5 (4 wide)
+    c3_past = pool_layer(y, ds_sizes[3])
+    c5_past = pool_layer(y, ds_sizes[5])
+    
+    c3_future = pool_layer(Y, ds_sizes[3])
+    c5_future = pool_layer(Y, ds_sizes[5])
+    
+    c0_rms = tf.sqrt(tf.reduce_sum(tf.pow(tf.subtract(y, Y), 2)))
+    c3_rms = tf.sqrt(tf.reduce_sum(tf.pow(tf.subtract(c3_past, c3_future), 2)))
+    c5_rms = tf.sqrt(tf.reduce_sum(tf.pow(tf.subtract(c5_past, c5_future), 2)))
+    
+    cost = tf.add(c0_rms, tf.add(c3_rms, c5_rms), name='total_cost')
+
+    #cost = tf.sqrt(tf.reduce_sum(tf.pow(tf.subtract(y, Y), 2, name='powerrr')))
     train_op = tf.train.GradientDescentOptimizer(learning_rate).minimize(cost)
 
 error = []
@@ -71,7 +103,7 @@ print('starting tf session')
 with tf.Session(graph=g) as sess:
     sess.run(tf.global_variables_initializer())
     
-    for i in range(100):
+    for i in range(3):
         
         training_batch = zip(range(0, len(trX), batch_size),
                         range(batch_size, len(trX)+1, batch_size))
