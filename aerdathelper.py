@@ -4,7 +4,8 @@ real_indices, real_times = dvs2group(xs, ys, ts)
 """
 
 import numpy as np
-from brian2 import *
+import matplotlib                                                               
+matplotlib.use('Agg')
 import struct
 import os
 
@@ -154,55 +155,6 @@ def loadaerdat(datafile='/tmp/aerout.dat', length=0, version=V2, debug=1, camera
 
     return timestamps, xaddr, yaddr, pol
 
-def dvs2group(xs, ys, ts):
-    """ Given DVS data convert it to indices and timestamps that can be used by a Brian2 Spiking
-        Neuron group. 
-    """
-    # TODO This means no 2 distinct neurons can fire at the same us.... Needs a fix
-    real_indices = [flatIndex(*xy) for xy in zip(xs, ys)]
-    real_times, uniq_idxs = np.unique(ts, return_index=True)
-    real_indices = np.asarray(real_indices)[uniq_idxs]
-    real_times = (real_times - real_times[0])*us
-    return (real_indices, real_times)
-
-def usTimes2ms(indices, times):
-    """Given a list of spike times and indices, return a list of spike times and
-    indices such that there is only 1 spike per ms
-    
-    Parameters:
-        times - numpy array of spike times with a unit of time
-        indices - index of spikes corresponding to times in the times array
-        res - the new resolution to be used for which only 1 spike should occur
-    """
-    time2ms = lambda x: int(x/ms)
-    ntimes = []
-    nindices = []
-    
-    cur_indices = [] # list of the indices that have spiked in this timestep
-    cur_times = []
-    cur_timestep = time2ms(times[0])
-    
-    for i in range(len(times)):
-        spike_timestep = time2ms(times[i])
-        spike_index = indices[i]
-        
-        if spike_timestep != cur_timestep:  # spike in new timestep
-            ntimes.extend(cur_times)
-            nindices.extend(cur_indices)
-            cur_times = [spike_timestep]
-            cur_indices = [spike_index]
-            cur_timestep = spike_timestep
-            
-        elif spike_index not in cur_indices:  # Index hasn't already spiked
-            cur_times.append(spike_timestep)
-            cur_indices.append(spike_index)
-    
-    ntimes.extend(cur_times)
-    nindices.extend(cur_indices)
-    # return results
-    return np.array(nindices), np.array(ntimes)*ms
-    
-   
 def dvs2accum(xs, ys, ts, period_ms=20):
     """ Given an event stream in the form of four lists <xs, ys, ts, ps> generate two 2D arrays of 
         linearly accumulated images corresponding to past and future accumulations around points
